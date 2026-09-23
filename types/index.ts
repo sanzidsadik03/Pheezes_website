@@ -46,8 +46,8 @@ export interface Product {
   slug: string
   shortDescription: string | null
   description: string | null
-  regularPrice: number
-  offerPrice: number | null
+  regularPrice: number | any
+  offerPrice: number | null | any
   offerEnabled: boolean
   categoryId: string | null
   availability: Availability
