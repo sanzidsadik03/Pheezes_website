@@ -2,6 +2,31 @@ import { z } from 'zod'
 
 // ─── Product Schemas ───────────────────────────────────────
 
+export const productVariationSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().min(1, 'Variation name is required').max(100),
+  imageUrl: z.string().nullable().optional(),
+  imagePublicId: z.string().nullable().optional(),
+  availability: z.enum(['IN_STOCK', 'OUT_OF_STOCK', 'COMING_SOON']),
+  visible: z.boolean().default(true),
+  displayOrder: z.number().int().optional(),
+})
+
+export const productImageInputSchema = z.object({
+  id: z.string().optional(),
+  url: z.string().min(1),
+  publicId: z.string().optional().nullable(),
+  isPrimary: z.boolean().optional(),
+  displayOrder: z.number().int().optional(),
+})
+
+export const productVideoInputSchema = z.object({
+  id: z.string().optional(),
+  url: z.string().min(1),
+  publicId: z.string().optional().nullable(),
+  displayOrder: z.number().int().optional(),
+})
+
 export const productFormSchema = z.object({
   name: z.string().min(1, 'Product name is required').max(200, 'Name too long'),
   slug: z
@@ -29,7 +54,36 @@ export const productFormSchema = z.object({
   displayOrder: z.number().int().optional(),
   metaTitle: z.string().max(200).optional(),
   metaDescription: z.string().max(500).optional(),
+  hasVariations: z.boolean().optional(),
+  variations: z.array(productVariationSchema).optional(),
+  images: z.array(productImageInputSchema).optional(),
+  videos: z.array(productVideoInputSchema).optional(),
 })
+
+export type ProductVariationValues = {
+  id?: string
+  name: string
+  imageUrl?: string | null
+  imagePublicId?: string | null
+  availability: 'IN_STOCK' | 'OUT_OF_STOCK' | 'COMING_SOON'
+  visible?: boolean
+  displayOrder?: number
+}
+
+export type ProductImageValues = {
+  id?: string
+  url: string
+  publicId?: string | null
+  isPrimary?: boolean
+  displayOrder?: number
+}
+
+export type ProductVideoValues = {
+  id?: string
+  url: string
+  publicId?: string | null
+  displayOrder?: number
+}
 
 export type ProductFormValues = {
   name: string
@@ -46,6 +100,10 @@ export type ProductFormValues = {
   displayOrder?: number
   metaTitle?: string
   metaDescription?: string
+  hasVariations?: boolean
+  variations?: ProductVariationValues[]
+  images?: ProductImageValues[]
+  videos?: ProductVideoValues[]
 }
 
 // ─── Review Schemas ────────────────────────────────────────

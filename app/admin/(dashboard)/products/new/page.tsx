@@ -26,12 +26,6 @@ export default async function NewProductPage() {
 
       <div className="bg-pheezes-gray-50 rounded-2xl p-1">
         <div className="bg-white rounded-xl p-6">
-          <div className="mb-4 p-4 bg-pheezes-yellow/10 border border-pheezes-yellow/30 rounded-xl">
-            <p className="text-sm text-pheezes-gray-700">
-              <strong>💡 Tip:</strong> After creating the product, you can add images and videos in the{' '}
-              <strong>Media</strong> tab.
-            </p>
-          </div>
           <ProductForm categories={categories} mode="create" />
         </div>
       </div>

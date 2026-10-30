@@ -9,10 +9,17 @@ import type { ProductImage } from '@/types'
 interface ProductGalleryProps {
   images: ProductImage[]
   productName: string
+  activeImageUrl?: string | null
+  onImageChange?: (url: string | null) => void
 }
 
-export function ProductGallery({ images, productName }: ProductGalleryProps) {
-  const [activeIndex, setActiveIndex] = useState(0)
+export function ProductGallery({
+  images,
+  productName,
+  activeImageUrl,
+  onImageChange,
+}: ProductGalleryProps) {
+  const [internalActiveIndex, setInternalActiveIndex] = useState(0)
   const [lightboxOpen, setLightboxOpen] = useState(false)
 
   const sortedImages = [...images].sort((a, b) => {
@@ -21,11 +28,26 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
     return a.displayOrder - b.displayOrder
   })
 
+  const matchingIndex = activeImageUrl
+    ? sortedImages.findIndex((img) => img.url === activeImageUrl)
+    : -1
+
+  const activeIndex = matchingIndex !== -1 ? matchingIndex : internalActiveIndex
+
+  const activeUrl =
+    activeImageUrl && matchingIndex === -1
+      ? activeImageUrl
+      : sortedImages[activeIndex]?.url
+
   const goTo = (index: number) => {
-    setActiveIndex(Math.max(0, Math.min(index, sortedImages.length - 1)))
+    const nextIndex = Math.max(0, Math.min(index, sortedImages.length - 1))
+    setInternalActiveIndex(nextIndex)
+    if (onImageChange && sortedImages[nextIndex]) {
+      onImageChange(sortedImages[nextIndex].url)
+    }
   }
 
-  if (sortedImages.length === 0) {
+  if (!activeUrl && sortedImages.length === 0) {
     return (
       <div className="aspect-square bg-pheezes-gray-50 rounded-2xl flex items-center justify-center">
         <Package className="w-20 h-20 text-pheezes-gray-200" />
@@ -33,19 +55,17 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
     )
   }
 
-  const active = sortedImages[activeIndex]
-
   return (
     <div className="space-y-3">
       {/* Main Image */}
       <div className="relative aspect-square bg-pheezes-gray-50 rounded-2xl overflow-hidden group">
         <Image
-          src={active.url}
-          alt={`${productName} - image ${activeIndex + 1}`}
+          src={activeUrl!}
+          alt={`${productName} - main view`}
           fill
           sizes="(max-width: 768px) 100vw, 50vw"
           className="object-cover"
-          priority={activeIndex === 0}
+          priority
         />
 
         {/* Nav Arrows (only if multiple images) */}
@@ -93,7 +113,7 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
               onClick={() => goTo(index)}
               className={cn(
                 'flex-shrink-0 w-16 h-16 rounded-xl overflow-hidden border-2 transition-all duration-150',
-                index === activeIndex
+                index === activeIndex && (!activeImageUrl || matchingIndex !== -1)
                   ? 'border-pheezes-yellow shadow-[var(--shadow-yellow)]'
                   : 'border-transparent hover:border-pheezes-gray-300'
               )}
@@ -115,7 +135,7 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
         <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={() => setLightboxOpen(false)}>
           <div className="relative max-w-4xl max-h-full w-full" onClick={(e) => e.stopPropagation()}>
             <Image
-              src={active.url}
+              src={activeUrl!}
               alt={`${productName} - full view`}
               width={1200}
               height={1200}

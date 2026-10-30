@@ -23,6 +23,14 @@ export interface Category {
   createdAt: Date
 }
 
+export interface CategoryWithCount {
+  id: string
+  name: string
+  slug: string
+  productCount: number
+  createdAt: Date
+}
+
 export interface ProductImage {
   id: string
   productId: string
@@ -38,6 +46,19 @@ export interface ProductVideo {
   url: string
   publicId: string
   displayOrder: number
+}
+
+export interface ProductVariation {
+  id: string
+  productId: string
+  name: string
+  imageUrl: string | null
+  imagePublicId: string | null
+  availability: Availability
+  visible: boolean
+  displayOrder: number
+  createdAt: Date
+  updatedAt: Date
 }
 
 export interface Product {
@@ -61,6 +82,7 @@ export interface Product {
   category?: Category | null
   images?: ProductImage[]
   videos?: ProductVideo[]
+  variations?: ProductVariation[]
 }
 
 export interface ReviewImage {
@@ -106,6 +128,16 @@ export interface SiteSettings {
 
 // ─── Form Data Types ──────────────────────────────────────
 
+export interface ProductVariationFormData {
+  id?: string
+  name: string
+  imageUrl?: string | null
+  imagePublicId?: string | null
+  availability: Availability
+  visible: boolean
+  displayOrder?: number
+}
+
 export interface ProductFormData {
   name: string
   slug: string
@@ -121,6 +153,8 @@ export interface ProductFormData {
   displayOrder: number
   metaTitle: string
   metaDescription: string
+  hasVariations?: boolean
+  variations?: ProductVariationFormData[]
 }
 
 export interface ReviewFormData {
@@ -200,6 +234,7 @@ export type ProductWithRelations = Product & {
   category: Category | null
   images: ProductImage[]
   videos: ProductVideo[]
+  variations: ProductVariation[]
 }
 
 export type ReviewWithImages = Review & {

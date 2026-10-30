@@ -11,14 +11,14 @@ export default async function AdminLayout({
   if (!session) redirect('/admin/login')
 
   return (
-    <div className="flex h-screen bg-pheezes-gray-50 overflow-hidden">
+    <div className="fixed inset-0 flex bg-pheezes-gray-50 overflow-hidden">
       {/* Sidebar */}
       <AdminSidebar userEmail={session.user?.email} />
 
       {/* Main Content */}
-      <div className="flex-1 overflow-y-auto">
+      <main className="flex-1 min-w-0 h-full overflow-y-auto overscroll-none">
         <div className="max-w-6xl mx-auto px-6 py-8">{children}</div>
-      </div>
+      </main>
     </div>
   )
 }

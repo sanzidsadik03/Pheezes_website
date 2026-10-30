@@ -188,6 +188,28 @@ Features:
       create: prod,
     })
     console.log(`  ✅ Product: ${product.name}`)
+
+    if (prod.slug === 'premium-canvas-wallet') {
+      const sampleVariations = [
+        { name: 'Black', availability: 'IN_STOCK' as const, visible: true, displayOrder: 1 },
+        { name: 'Navy', availability: 'IN_STOCK' as const, visible: true, displayOrder: 2 },
+        { name: 'Khaki', availability: 'OUT_OF_STOCK' as const, visible: true, displayOrder: 3 },
+      ]
+      for (const v of sampleVariations) {
+        const existingVar = await prisma.productVariation.findFirst({
+          where: { productId: product.id, name: v.name },
+        })
+        if (!existingVar) {
+          await prisma.productVariation.create({
+            data: {
+              productId: product.id,
+              ...v,
+            },
+          })
+          console.log(`     🎨 Variation: ${v.name}`)
+        }
+      }
+    }
   }
 
   // ── 4. Reviews ─────────────────────────────────────────────
