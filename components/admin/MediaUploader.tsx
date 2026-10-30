@@ -23,7 +23,7 @@ interface MediaUploaderProps {
 }
 
 // ─── Upload to Cloudinary via Signed Upload ───────────────
-async function uploadToCloudinary(
+export async function uploadToCloudinary(
   file: File,
   folder: string
 ): Promise<{ url: string; publicId: string }> {

@@ -28,6 +28,7 @@ const navItems = [
     children: [
       { label: 'All Products', href: '/admin/products', icon: ShoppingBag },
       { label: 'Add Product', href: '/admin/products/new', icon: PlusCircle },
+      { label: 'Categories', href: '/admin/categories', icon: Tag },
     ],
   },
   {
@@ -75,14 +76,28 @@ export function AdminSidebar({ userEmail }: AdminSidebarProps) {
     return pathname.startsWith(href)
   }
 
+  const isChildActive = (childHref: string, allChildren: Array<{ href: string }>) => {
+    if (pathname === childHref) return true
+    if (pathname.startsWith(childHref + '/')) {
+      const hasMoreSpecificSibling = allChildren.some(
+        (sibling) =>
+          sibling.href !== childHref &&
+          sibling.href.length > childHref.length &&
+          (pathname === sibling.href || pathname.startsWith(sibling.href + '/'))
+      )
+      return !hasMoreSpecificSibling
+    }
+    return false
+  }
+
   const isParentActive = (children?: Array<{ href: string }>) => {
-    return children?.some((child) => pathname.startsWith(child.href)) ?? false
+    return children?.some((child) => isChildActive(child.href, children)) ?? false
   }
 
   return (
     <aside
       className={cn(
-        'h-screen bg-pheezes-black border-r border-white/10 flex flex-col transition-all duration-300 flex-shrink-0 sticky top-0',
+        'h-full bg-pheezes-black border-r border-white/10 flex flex-col transition-all duration-300 flex-shrink-0',
         collapsed ? 'w-16' : 'w-64'
       )}
     >
@@ -106,7 +121,7 @@ export function AdminSidebar({ userEmail }: AdminSidebarProps) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto p-3 space-y-1 no-scrollbar">
+      <nav className="flex-1 min-h-0 overflow-y-auto p-3 space-y-1 no-scrollbar">
         {navItems.map((item) => {
           if (item.children) {
             const parentActive = isParentActive(item.children)
@@ -145,7 +160,7 @@ export function AdminSidebar({ userEmail }: AdminSidebarProps) {
                   <div className="ml-4 mt-1 space-y-0.5 border-l border-white/10 pl-3">
                     {item.children.map((child) => {
                       const ChildIcon = child.icon
-                      const active = isActive(child.href)
+                      const active = isChildActive(child.href, item.children)
                       return (
                         <Link
                           key={child.href}

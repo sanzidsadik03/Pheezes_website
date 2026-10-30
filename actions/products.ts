@@ -73,6 +73,7 @@ export async function getProducts(options?: {
         include: {
           images: { orderBy: { displayOrder: 'asc' } },
           videos: { orderBy: { displayOrder: 'asc' } },
+          variations: { orderBy: { displayOrder: 'asc' } },
           category: true,
         },
         orderBy,
@@ -98,6 +99,7 @@ export async function getProductBySlug(slug: string): Promise<ProductWithRelatio
       include: {
         images: { orderBy: { displayOrder: 'asc' } },
         videos: { orderBy: { displayOrder: 'asc' } },
+        variations: { orderBy: { displayOrder: 'asc' } },
         category: true,
       },
     })
@@ -116,9 +118,37 @@ export async function getProductById(id: string): Promise<ProductWithRelations |
     include: {
       images: { orderBy: { displayOrder: 'asc' } },
       videos: { orderBy: { displayOrder: 'asc' } },
+      variations: { orderBy: { displayOrder: 'asc' } },
       category: true,
     },
   })
+  if (!product) return null
+
+  // Ensure any existing variation images are present in product.images
+  const existingImageUrls = new Set(product.images.map((img) => img.url))
+  const missingVarImages = product.variations.filter(
+    (v) => v.imageUrl && v.imagePublicId && !existingImageUrls.has(v.imageUrl)
+  )
+
+  if (missingVarImages.length > 0) {
+    const createdImages = await Promise.all(
+      missingVarImages.map((v, idx) =>
+        prisma.productImage.create({
+          data: {
+            productId: id,
+            url: v.imageUrl!,
+            publicId: v.imagePublicId!,
+            isPrimary: product.images.length === 0 && idx === 0,
+            displayOrder: product.images.length + idx,
+          },
+        })
+      )
+    )
+    product.images = [...product.images, ...createdImages].sort(
+      (a, b) => a.displayOrder - b.displayOrder
+    )
+  }
+
   return product as ProductWithRelations | null
 }
 
@@ -142,6 +172,18 @@ export async function createProduct(
       return { success: false, error: 'A product with this slug already exists' }
     }
 
+    const variationsData =
+      data.hasVariations && data.variations && data.variations.length > 0
+        ? data.variations.map((v, idx) => ({
+            name: v.name,
+            imageUrl: v.imageUrl || null,
+            imagePublicId: v.imagePublicId || null,
+            availability: v.availability as Availability,
+            visible: v.visible !== undefined ? v.visible : true,
+            displayOrder: v.displayOrder ?? idx,
+          }))
+        : []
+
     const product = await prisma.product.create({
       data: {
         name: data.name,
@@ -158,8 +200,60 @@ export async function createProduct(
         displayOrder: data.displayOrder,
         metaTitle: data.metaTitle || null,
         metaDescription: data.metaDescription || null,
+        variations:
+          variationsData.length > 0
+            ? {
+                create: variationsData,
+              }
+            : undefined,
       },
     })
+
+    // 1. Process uploaded images from Media tab
+    const mediaImages = (data.images || []).map((img, idx) => ({
+      productId: product.id,
+      url: img.url,
+      publicId: img.publicId || '',
+      isPrimary: Boolean(img.isPrimary),
+      displayOrder: img.displayOrder ?? idx,
+    }))
+
+    // If any variation has an image, ensure it is also added to product_images if not already present
+    const existingImageUrls = new Set(mediaImages.map((m) => m.url))
+    const extraVariationImages = variationsData
+      .filter((v) => v.imageUrl && !existingImageUrls.has(v.imageUrl))
+      .map((v, idx) => ({
+        productId: product.id,
+        url: v.imageUrl!,
+        publicId: v.imagePublicId || '',
+        isPrimary: mediaImages.length === 0 && idx === 0,
+        displayOrder: mediaImages.length + idx,
+      }))
+
+    const allImagesToCreate = [...mediaImages, ...extraVariationImages]
+
+    // Ensure at least one image is primary if images exist
+    if (allImagesToCreate.length > 0 && !allImagesToCreate.some((img) => img.isPrimary)) {
+      allImagesToCreate[0].isPrimary = true
+    }
+
+    if (allImagesToCreate.length > 0) {
+      await prisma.productImage.createMany({
+        data: allImagesToCreate,
+      })
+    }
+
+    // 2. Process uploaded videos from Media tab
+    if (data.videos && data.videos.length > 0) {
+      await prisma.productVideo.createMany({
+        data: data.videos.map((vid, idx) => ({
+          productId: product.id,
+          url: vid.url,
+          publicId: vid.publicId || '',
+          displayOrder: vid.displayOrder ?? idx,
+        })),
+      })
+    }
 
     revalidatePath('/')
     revalidatePath('/products')
@@ -214,6 +308,98 @@ export async function updateProduct(
       },
     })
 
+    // Handle variations sync
+    if (data.hasVariations) {
+      const incoming = data.variations || []
+      const existingVariations = await prisma.productVariation.findMany({
+        where: { productId: id },
+      })
+
+      const incomingIds = incoming.filter((v) => v.id).map((v) => v.id)
+      const toDelete = existingVariations.filter((v) => !incomingIds.includes(v.id))
+
+      // Delete removed variations and their cloudinary assets
+      await Promise.all([
+        ...toDelete
+          .filter((v) => v.imagePublicId)
+          .map((v) => deleteCloudinaryAsset(v.imagePublicId!, 'image')),
+        prisma.productVariation.deleteMany({
+          where: { id: { in: toDelete.map((v) => v.id) } },
+        }),
+      ])
+
+      // Upsert / update incoming variations
+      for (let i = 0; i < incoming.length; i++) {
+        const v = incoming[i]
+        if (v.id) {
+          await prisma.productVariation.update({
+            where: { id: v.id },
+            data: {
+              name: v.name,
+              imageUrl: v.imageUrl || null,
+              imagePublicId: v.imagePublicId || null,
+              availability: v.availability as Availability,
+              visible: v.visible !== undefined ? v.visible : true,
+              displayOrder: v.displayOrder ?? i,
+            },
+          })
+        } else {
+          await prisma.productVariation.create({
+            data: {
+              productId: id,
+              name: v.name,
+              imageUrl: v.imageUrl || null,
+              imagePublicId: v.imagePublicId || null,
+              availability: v.availability as Availability,
+              visible: v.visible !== undefined ? v.visible : true,
+              displayOrder: v.displayOrder ?? i,
+            },
+          })
+        }
+      }
+
+      // Ensure variation images are also in product_images
+      const currentImages = await prisma.productImage.findMany({
+        where: { productId: id },
+        select: { url: true },
+      })
+      const existingUrls = new Set(currentImages.map((img) => img.url))
+      const hasAnyPrimary = await prisma.productImage.findFirst({
+        where: { productId: id, isPrimary: true },
+      })
+
+      const newVariationImages = incoming
+        .filter((v) => v.imageUrl && v.imagePublicId && !existingUrls.has(v.imageUrl))
+        .map((v, idx) => ({
+          productId: id,
+          url: v.imageUrl!,
+          publicId: v.imagePublicId!,
+          isPrimary: !hasAnyPrimary && idx === 0,
+          displayOrder: currentImages.length + idx,
+        }))
+
+      if (newVariationImages.length > 0) {
+        await prisma.productImage.createMany({
+          data: newVariationImages,
+        })
+      }
+    } else {
+      // Remove any existing variations if variations checkbox unchecked
+      const existingVariations = await prisma.productVariation.findMany({
+        where: { productId: id },
+      })
+      if (existingVariations.length > 0) {
+        await Promise.all([
+          ...existingVariations
+            .filter((v) => v.imagePublicId)
+            .map((v) => deleteCloudinaryAsset(v.imagePublicId!, 'image')),
+          prisma.productVariation.deleteMany({
+            where: { productId: id },
+          }),
+        ])
+      }
+    }
+
     revalidatePath('/')
     revalidatePath('/products')
     revalidatePath(`/products/${product.slug}`)
@@ -231,10 +417,10 @@ export async function deleteProduct(id: string): Promise<ActionResult> {
   try {
     await requireAdmin()
 
-    // Get all images and videos for Cloudinary cleanup
+    // Get all images, videos, and variations for Cloudinary cleanup
     const product = await prisma.product.findUnique({
       where: { id },
-      include: { images: true, videos: true },
+      include: { images: true, videos: true, variations: true },
     })
 
     if (!product) return { success: false, error: 'Product not found' }
@@ -243,6 +429,9 @@ export async function deleteProduct(id: string): Promise<ActionResult> {
     await Promise.all([
       ...product.images.map((img) => deleteCloudinaryAsset(img.publicId, 'image')),
       ...product.videos.map((vid) => deleteCloudinaryAsset(vid.publicId, 'video')),
+      ...product.variations
+        .filter((v) => v.imagePublicId)
+        .map((v) => deleteCloudinaryAsset(v.imagePublicId!, 'image')),
     ])
 
     await prisma.product.delete({ where: { id } })
@@ -349,7 +538,8 @@ export async function deleteProductImage(imageId: string): Promise<ActionResult>
 // ─── Reorder Product Images (admin) ──────────────────────
 
 export async function reorderProductImages(
-  images: Array<{ id: string; displayOrder: number }>
+  images: Array<{ id: string; displayOrder: number }>,
+  productId?: string
 ): Promise<ActionResult> {
   try {
     await requireAdmin()
@@ -361,6 +551,21 @@ export async function reorderProductImages(
         })
       )
     )
+
+    revalidatePath('/')
+    revalidatePath('/products')
+    revalidatePath('/offers')
+    if (productId) {
+      const product = await prisma.product.findUnique({
+        where: { id: productId },
+        select: { slug: true },
+      })
+      if (product?.slug) {
+        revalidatePath(`/products/${product.slug}`)
+      }
+      revalidatePath(`/admin/products/${productId}`)
+    }
+    revalidatePath('/admin/products')
     return { success: true }
   } catch (error) {
     return { success: false, error: 'Failed to reorder images.' }
@@ -380,7 +585,20 @@ export async function setPrimaryImage(imageId: string, productId: string): Promi
       where: { id: imageId },
       data: { isPrimary: true },
     })
+
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
+      select: { slug: true },
+    })
+
+    revalidatePath('/')
+    revalidatePath('/products')
+    revalidatePath('/offers')
+    if (product?.slug) {
+      revalidatePath(`/products/${product.slug}`)
+    }
     revalidatePath('/admin/products')
+    revalidatePath(`/admin/products/${productId}`)
     return { success: true }
   } catch (error) {
     return { success: false, error: 'Failed to set primary image.' }
@@ -420,6 +638,28 @@ export async function deleteProductVideo(videoId: string): Promise<ActionResult>
     return { success: true }
   } catch (error) {
     return { success: false, error: 'Failed to delete video.' }
+  }
+}
+
+// ─── Delete Product Variation (admin) ─────────────────────
+
+export async function deleteProductVariation(variationId: string): Promise<ActionResult> {
+  try {
+    await requireAdmin()
+    const variation = await prisma.productVariation.findUnique({ where: { id: variationId } })
+    if (!variation) return { success: false, error: 'Variation not found' }
+
+    if (variation.imagePublicId) {
+      await deleteCloudinaryAsset(variation.imagePublicId, 'image')
+    }
+
+    await prisma.productVariation.delete({ where: { id: variationId } })
+    revalidatePath('/')
+    revalidatePath('/products')
+    revalidatePath(`/admin/products/${variation.productId}`)
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: 'Failed to delete variation.' }
   }
 }
 
@@ -469,32 +709,13 @@ export async function getDashboardStats() {
   }
 }
 
-// ─── Get Categories ────────────────────────────────────────
+// ─── Categories ───────────────────────────────────────────
 
 export async function getCategories() {
   try {
     return await prisma.category.findMany({ orderBy: { name: 'asc' } })
   } catch {
     return []
-  }
-}
-
-// ─── Create Category (admin) ──────────────────────────────
-
-export async function createCategory(
-  name: string,
-  slug: string
-): Promise<ActionResult<{ id: string }>> {
-  try {
-    await requireAdmin()
-    const existing = await prisma.category.findUnique({ where: { slug } })
-    if (existing) return { success: false, error: 'A category with this slug already exists' }
-
-    const category = await prisma.category.create({ data: { name, slug } })
-    revalidatePath('/admin/products')
-    return { success: true, data: { id: category.id } }
-  } catch (error) {
-    return { success: false, error: 'Failed to create category.' }
   }
 }
 
